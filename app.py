@@ -16,12 +16,14 @@ if st.session_state.assicurazione is None:
     st.title("🏥 Quale assicurazione sanitaria hai?")
     st.divider()
     
+    nome_col = assicurazioni.columns[0]
+    
     cols = st.columns(3)
     for idx, row in assicurazioni.iterrows():
         with cols[idx % 3]:
-            st.markdown(f"### {row['nome']}")
+            st.markdown(f"### {row[nome_col]}")
             if st.button("Seleziona", key=idx):
-                st.session_state.assicurazione = row['nome']
+                st.session_state.assicurazione = row[nome_col]
                 st.rerun()
 else:
     col1, col2 = st.columns([4, 1])
@@ -34,25 +36,42 @@ else:
     
     st.divider()
     
-    df_cov = coperture[coperture['assicurazione'].str.upper() == st.session_state.assicurazione.upper()].copy()
+    assic_col = [c for c in coperture.columns if 'assic' in c.lower()][0]
+    df_cov = coperture[coperture[assic_col].str.upper() == st.session_state.assicurazione.upper()].copy()
     df = df_cov.merge(prestazioni, left_on='nome_record', right_on='id', how='left')
     
-    search = st.text_input("🔍 Cerca", placeholder="es: pulizia denti")
+    search = st.text_input("🔍 Cerca", placeholder="es: pulizia")
     
     if search:
+        nome_col = [c for c in df.columns if 'nome_tec' in c.lower()][0]
+        sin_col = [c for c in df.columns if 'sinon' in c.lower()][0]
         mask = (
-            df['nome_tecnico'].str.contains(search, case=False, na=False) |
-            df['sinonimi'].str.contains(search, case=False, na=False)
+            df[nome_col].str.contains(search, case=False, na=False) |
+            df[sin_col].str.contains(search, case=False, na=False)
         )
         df = df[mask]
     
     st.write(f"**{len(df)} prestazioni**")
     
     for idx, row in df.head(30).iterrows():
-        massimale = float(str(row['massimale']).replace('€','').replace(',','.'))
-        with st.expander(f"{row['nome_tecnico']} · €{massimale:.0f}"):
-            st.write(row['descrizione_semplice'])
+        nome = row[nome_col] if 'nome_col' in locals() else row['nome_record']
+        mass_col = [c for c in df.columns if 'massim' in c.lower()][0]
+        comp_col = [c for c in df.columns if 'compart' in c.lower()][0]
+        
+        try:
+            massimale = float(str(row[mass_col]).replace('€','').replace(',','.'))
+            compartec = float(row[comp_col])
+        except:
+            massimale = 0
+            compartec = 0
+        
+        with st.expander(f"{nome} · €{massimale:.0f}"):
+            desc_col = [c for c in df.columns if 'descriz' in c.lower() and 'sempl' in c.lower()]
+            if desc_col and pd.notna(row[desc_col[0]]):
+                st.write(row[desc_col[0]])
+            
             c1,c2,c3 = st.columns(3)
             c1.metric("Massimale", f"€{massimale:.0f}")
-            c2.metric("Compartecipazione", f"{row['compartecipazione']}%")
-            c3.metric("Rimborso", f"€{massimale * (1-row['compartecipazione']/100):.0f}")
+            c2.metric("Compartecipazione", f"{compartec:.0f}%")
+            rimb = massimale * (1-compartec/100) if massimale > 0 else 0
+            c3.metric("Rimborso", f"€{rimb:.0f}")
