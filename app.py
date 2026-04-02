@@ -87,8 +87,25 @@ try:
                 prest_id_col = col
                 break
         
-        if prest_id_col and 'ID' in prestazioni.columns:
-            df = df.merge(prestazioni, left_on=prest_id_col, right_on='ID', how='left', suffixes=('', '_prest'))
+        # DEBUG MERGE
+st.write("### 🔍 Debug Merge")
+st.write(f"**Colonna ID coperture:** `{prest_id_col}`")
+st.write(f"**Colonne prestazioni:** {prestazioni.columns.tolist()}")
+st.write(f"**Prime righe df prima merge:**")
+st.write(df[[prest_id_col] if prest_id_col else df.columns[:3]].head())
+
+if prest_id_col:
+    st.write(f"**Valori esempio in {prest_id_col}:**")
+    st.write(df[prest_id_col].head().tolist())
+    
+    # Prova merge
+    if 'ID' in prestazioni.columns:
+        st.write(f"**Valori esempio in Prestazioni.ID:**")
+        st.write(prestazioni['ID'].head().tolist())
+        
+        df = df.merge(prestazioni, left_on=prest_id_col, right_on='ID', how='left', suffixes=('', '_prest'))
+        st.write(f"**Righe dopo merge:** {len(df)}")
+        st.write(f"**Colonne dopo merge:** {df.columns.tolist()}")
         
         # Barra ricerca
         search = st.text_input("🔍 Cerca prestazione", placeholder="es: pulizia denti, visita cardiologica...")
