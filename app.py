@@ -94,4 +94,93 @@ else:
             left_on=prest_id_col,
             right_on='ID',
             how='left',
-            suffixes=
+            suffixes=('_cov', '_prest')
+        )
+    
+    # Barra ricerca
+    search = st.text_input(
+        "🔍 Cerca prestazione",
+        placeholder="es: pulizia denti, visita cardiologica, risonanza..."
+    )
+    
+    # Filtra per ricerca
+    df_filtered = df.copy()
+    if search:
+        mask = pd.Series([False] * len(df))
+        search_cols = ['Nome Tecnico', 'Sinonimi', 'Keywords Ricerca', prest_id_col]
+        for col in search_cols:
+            if col in df.columns:
+                mask = mask | df[col].astype(str).str.contains(search, case=False, na=False)
+        df_filtered = df[mask]
+    
+    st.markdown(f"##### {len(df_filtered)} prestazioni trovate")
+    st.divider()
+    
+    if len(df_filtered) == 0:
+        st.info("Nessuna prestazione trovata. Prova altri termini di ricerca.")
+    else:
+        # Mostra prestazioni
+        for idx, row in df_filtered.head(20).iterrows():
+            # Titolo
+            nome = row.get('Nome Tecnico', row.get(prest_id_col, f"Prestazione {idx}"))
+            emoji = row.get('Icon Emoji', '📋')
+            massimale = row.get('Massimale_EUR', 0)
+            
+            with st.expander(f"{emoji} {nome} · €{massimale:.0f}"):
+                # Descrizione
+                if 'Descrizione Semplice' in row:
+                    desc = row['Descrizione Semplice']
+                    if pd.notna(desc):
+                        st.markdown(desc)
+                        st.divider()
+                
+                # Metriche
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Massimale", f"€{row.get('Massimale_EUR', 0):.0f}")
+                c2.metric("Compartecipazione", f"{row.get('Compartecipazione_Perc', 0)}%")
+                c3.metric("Rimborso", f"€{row.get('Rimborso_Teorico_EUR', 0):.0f}")
+                
+                st.divider()
+                
+                # Regole
+                freq = row.get('Descrizione_Frequenza')
+                if pd.notna(freq):
+                    st.markdown("### 📜 Regole")
+                    st.info(freq)
+                
+                # Alert
+                c1, c2 = st.columns(2)
+                with c1:
+                    if row.get('Pre_Autorizzazione'):
+                        st.warning("⚠️ Pre-autorizzazione")
+                with c2:
+                    if row.get('Prescrizione_Obbligatoria'):
+                        st.warning("📋 Prescrizione necessaria")
+                
+                # Documenti
+                docs = row.get('Documenti_Dopo')
+                if pd.notna(docs):
+                    st.markdown("### 📄 Documenti")
+                    st.text_area(
+                        "Dopo prestazione",
+                        docs,
+                        height=150,
+                        disabled=True,
+                        label_visibility="collapsed",
+                        key=f"doc_{idx}"
+                    )
+                
+                # Alert importanti
+                alert = row.get('Alert_Importanti')
+                if pd.notna(alert):
+                    st.markdown("### ⚠️ Attenzione")
+                    st.warning(alert)
+                
+                # Note
+                note = row.get('Note_Speciali')
+                if pd.notna(note):
+                    st.markdown("### 📝 Note")
+                    st.info(note)
+
+st.divider()
+st.caption("Tool informativo · Dati aggiornati 2026")
