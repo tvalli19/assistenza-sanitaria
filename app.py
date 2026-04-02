@@ -15,7 +15,6 @@ def load_data():
     return assicurazioni, prestazioni, coperture
 
 def safe_float(val, default=0):
-    """Converte a float in modo sicuro"""
     try:
         if pd.notna(val):
             val_str = str(val).replace('€', '').replace(',', '.').strip()
@@ -25,33 +24,35 @@ def safe_float(val, default=0):
         pass
     return default
 
-# Carica dati
 assicurazioni, prestazioni, coperture = load_data()
 
-# Session state
 if 'assicurazione' not in st.session_state:
     st.session_state.assicurazione = None
 
-# PAGINA 1: Selezione Assicurazione
+# PAGINA 1
 if st.session_state.assicurazione is None:
     st.title("🏥 Quale assicurazione sanitaria hai?")
     st.markdown("**Scopri cosa è coperto e come ottenere il rimborso**")
     st.divider()
     
+    # Usa prima colonna qualunque sia il nome
+    col_nome = assicurazioni.columns[0]
+    col_dest = assicurazioni.columns[4] if len(assicurazioni.columns) > 4 else None
+    
     cols = st.columns(3)
     for idx, row in assicurazioni.iterrows():
         with cols[idx % 3]:
-            nome = str(row['nome']).strip()
+            nome = str(row[col_nome]).strip()
             st.markdown(f"### {nome}")
             
-            if pd.notna(row['destinatari']):
-                st.caption(str(row['destinatari'])[:120] + "...")
+            if col_dest and pd.notna(row[col_dest]):
+                st.caption(str(row[col_dest])[:120] + "...")
             
             if st.button("Seleziona →", key=f"sel_{idx}", use_container_width=True):
                 st.session_state.assicurazione = nome
                 st.rerun()
 
-# PAGINA 2: Ricerca
+# PAGINA 2
 else:
     col1, col2 = st.columns([5, 1])
     with col1:
@@ -64,100 +65,77 @@ else:
     
     st.divider()
     
-    # Filtra coperture per assicurazione (case-insensitive)
-    mask_assic = coperture['assicurazione'].str.strip().str.upper() == st.session_state.assicurazione.strip().upper()
-    df_coperture = coperture[mask_assic].copy()
+    # Trova colonna assicurazione in coperture
+    col_assic = [c for c in coperture.columns if 'assic' in c.lower()][0]
     
-    if len(df_coperture) == 0:
+    mask = coperture[col_assic].str.strip().str.upper() == st.session_state.assicurazione.strip().upper()
+    df_cov = coperture[mask].copy()
+    
+    if len(df_cov) == 0:
         st.warning(f"Nessuna copertura per {st.session_state.assicurazione}")
         st.stop()
     
-    # Merge con prestazioni usando nome_record = id
-    df = df_coperture.merge(
-        prestazioni,
-        left_on='nome_record',
-        right_on='id',
-        how='left'
-    )
+    # Trova colonne per merge
+    col_record = [c for c in df_cov.columns if 'record' in c.lower()][0]
+    col_id_prest = [c for c in prestazioni.columns if c.lower() == 'id'][0]
     
-    # Search bar
-    search = st.text_input(
-        "🔍 Cerca prestazione",
-        placeholder="es: pulizia denti, visita cardiologica, risonanza..."
-    )
+    df = df_cov.merge(prestazioni, left_on=col_record, right_on=col_id_prest, how='left')
     
-    # Filtra per search
+    search = st.text_input("🔍 Cerca prestazione", placeholder="es: pulizia denti")
+    
     df_filtered = df.copy()
     if search:
         search_lower = search.lower()
-        mask = (
-            df['nome_tecnico'].astype(str).str.lower().str.contains(search_lower, na=False) |
-            df['sinonimi'].astype(str).str.lower().str.contains(search_lower, na=False) |
-            df['keywords_ricerca'].astype(str).str.lower().str.contains(search_lower, na=False) |
-            df['nome_record'].astype(str).str.lower().str.contains(search_lower, na=False)
-        )
+        mask = pd.Series([False] * len(df))
+        
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                mask = mask | df[col].astype(str).str.lower().str.contains(search_lower, na=False)
+        
         df_filtered = df[mask]
     
     st.markdown(f"##### 🔍 {len(df_filtered)} prestazioni trovate")
     st.divider()
     
     if len(df_filtered) == 0:
-        st.info("💡 Nessuna prestazione trovata. Prova altri termini.")
+        st.info("💡 Nessuna prestazione trovata.")
     else:
-        # Mostra prestazioni
+        # Trova colonne dinamicamente
+        col_nome_tec = [c for c in df.columns if 'nome' in c.lower() and 'tec' in c.lower()]
+        col_nome_tec = col_nome_tec[0] if col_nome_tec else col_record
+        
+        col_categ = [c for c in df.columns if 'categ' in c.lower()]
+        col_categ = col_categ[0] if col_categ else None
+        
+        col_mass = [c for c in df.columns if 'massim' in c.lower()][0]
+        col_comp = [c for c in df.columns if 'compart' in c.lower()][0]
+        
         for idx, row in df_filtered.head(40).iterrows():
-            nome = row.get('nome_tecnico', row.get('nome_record', 'Prestazione'))
-            categoria = row.get('categoria', '')
-            massimale = safe_float(row.get('massimale'))
+            nome = str(row[col_nome_tec]) if col_nome_tec else f"Prestazione {idx}"
+            categoria = str(row[col_categ]) if col_categ and pd.notna(row[col_categ]) else ""
+            massimale = safe_float(row[col_mass])
             
-            # Emoji per categoria
-            emoji_dict = {
-                'Odontoiatria': '🦷',
-                'Visite Specialistiche': '👨‍⚕️',
-                'Diagnostica': '🔬',
-                'Terapie': '💊'
-            }
+            emoji_dict = {'Odontoiatria': '🦷', 'Visite Specialistiche': '👨‍⚕️', 'Diagnostica': '🔬'}
             emoji = emoji_dict.get(categoria, '📋')
             
             with st.expander(f"{emoji} **{nome}** · €{massimale:.0f}"):
-                # Descrizione
-                desc = row.get('descrizione_semplice')
-                if pd.notna(desc):
-                    st.markdown(desc)
+                col_desc = [c for c in df.columns if 'descriz' in c.lower() and 'sempl' in c.lower()]
+                if col_desc and pd.notna(row[col_desc[0]]):
+                    st.markdown(row[col_desc[0]])
                     st.divider()
                 
-                # Metriche
                 c1, c2, c3 = st.columns(3)
-                compartec = safe_float(row.get('compartecipazione'))
-                rimborso = massimale * (1 - compartec/100) if massimale > 0 and compartec > 0 else massimale
+                compartec = safe_float(row[col_comp])
+                rimborso = massimale * (1 - compartec/100) if massimale > 0 else 0
                 
                 c1.metric("💰 Massimale", f"€{massimale:.2f}")
                 c2.metric("📊 Compartecipazione", f"{compartec:.1f}%")
-                c3.metric("✅ Rimborso teorico", f"€{rimborso:.2f}")
+                c3.metric("✅ Rimborso", f"€{rimborso:.2f}")
                 
-                # Coperta
-                if row.get('coperta') == 'checked':
-                    st.success("✅ Prestazione coperta")
+                col_coperta = [c for c in df.columns if 'copert' in c.lower()]
+                if col_coperta and row[col_coperta[0]] == 'checked':
+                    st.success("✅ Coperta")
                 
-                st.divider()
-                
-                # Frequenza
-                freq_max = safe_float(row.get('frequenza_max'), 0)
-                if freq_max > 0 and freq_max < 900:
-                    st.markdown("### 📜 Limiti di Frequenza")
-                    st.info(f"**Massimo {int(freq_max)} {'volta' if freq_max == 1 else 'volte'} per anno**")
-                elif freq_max >= 900:
-                    st.success("✅ **Nessun limite di frequenza**")
-                
-                # Sinonimi
-                sinonimi = row.get('sinonimi')
-                if pd.notna(sinonimi) and len(str(sinonimi)) > 5:
-                    with st.expander("💡 Conosciuta anche come:"):
-                        sin_list = str(sinonimi).split(',')
-                        st.markdown(", ".join([f"`{s.strip()}`" for s in sin_list[:8]]))
-                
-                # Footer
                 st.caption(f"**Categoria:** {categoria}")
 
-st.divider()
-st.caption("🏥 Tool Assistenza Sanitaria · v1.0")
+st.caption("🏥 Tool Assistenza Sanitaria")
