@@ -7,6 +7,15 @@ st.set_page_config(page_title="Assistenza Sanitaria", page_icon="🏥", layout="
 def load_data():
     return pd.read_csv('assicurazioni.csv'), pd.read_csv('prestazioni.csv'), pd.read_csv('coperture.csv')
 
+def safe_float(val, default=0):
+    """Converte sicuramente a float"""
+    try:
+        if pd.notna(val) and str(val).strip() not in ['', 'nan', 'NaN']:
+            return float(str(val).replace('€', '').replace(',', '.').strip())
+    except:
+        pass
+    return default
+
 assicurazioni, prestazioni, coperture = load_data()
 
 if 'assicurazione' not in st.session_state:
@@ -40,39 +49,23 @@ else:
     
     st.divider()
     
-    # Trova colonna Assicurazione
+    # Filtra
     assic_col = [c for c in coperture.columns if 'assicuraz' in c.lower()][0]
-    
-    # Filtro
     coperture_temp = coperture.copy()
     coperture_temp['_clean'] = coperture_temp[assic_col].astype(str).str.strip().str.upper()
     df = coperture_temp[coperture_temp['_clean'] == st.session_state.assicurazione.strip().upper()].copy()
     
-    # Merge con prestazioni usando "Nome Record" come ID
+    # Merge
     if 'Nome Record' in df.columns and 'ID' in prestazioni.columns:
-        df = df.merge(
-            prestazioni,
-            left_on='Nome Record',
-            right_on='ID',
-            how='left',
-            suffixes=('', '_prest')
-        )
-        st.success(f"✅ {len(df)} prestazioni caricate con dettagli completi")
-    else:
-        st.info(f"📋 {len(df)} prestazioni (solo dati copertura)")
+        df = df.merge(prestazioni, left_on='Nome Record', right_on='ID', how='left', suffixes=('', '_prest'))
     
-    # Barra ricerca
-    search = st.text_input(
-        "🔍 Cerca prestazione",
-        placeholder="es: pulizia denti, visita cardiologica, risonanza..."
-    )
+    # Search
+    search = st.text_input("🔍 Cerca prestazione", placeholder="es: pulizia denti, visita...")
     
-    # Filtra per ricerca
     df_filtered = df.copy()
     if search:
         mask = pd.Series([False] * len(df))
-        search_cols = ['Nome Record', 'Nome Tecnico', 'Sinonimi', 'Keywords Ricerca', 'Categoria']
-        for col in search_cols:
+        for col in ['Nome Record', 'Nome Tecnico', 'Sinonimi', 'Keywords Ricerca']:
             if col in df.columns:
                 mask = mask | df[col].astype(str).str.contains(search, case=False, na=False)
         df_filtered = df[mask]
@@ -81,26 +74,14 @@ else:
     st.divider()
     
     if len(df_filtered) == 0:
-        st.info("Nessuna prestazione trovata. Prova altri termini di ricerca.")
+        st.info("Nessuna prestazione trovata.")
     else:
-        # Mostra prestazioni
         for idx, row in df_filtered.head(40).iterrows():
-            # Titolo
-            nome = row.get('Nome Tecnico', row.get('Nome Record', f"Prestazione #{idx}"))
+            nome = row.get('Nome Tecnico', row.get('Nome Record', 'Prestazione'))
             emoji = row.get('Icon Emoji', '📋')
-            
-            # Massimale (può essere in diverse colonne)
-            massimale = row.get('Massimale', row.get('Massimale_EUR', 0))
-            if pd.notna(massimale):
-                # Rimuovi simbolo € se presente
-                if isinstance(massimale, str):
-                    massimale = massimale.replace('€', '').replace(',', '.').strip()
-                massimale = float(massimale)
-            else:
-                massimale = 0
+            massimale = safe_float(row.get('Massimale', row.get('Massimale_EUR')))
             
             with st.expander(f"{emoji} {nome} · €{massimale:.0f}"):
-                # Descrizione
                 desc = row.get('Descrizione Semplice')
                 if pd.notna(desc):
                     st.markdown(desc)
@@ -108,20 +89,13 @@ else:
                 
                 # Metriche
                 c1, c2, c3 = st.columns(3)
-                
-                compartec = row.get('Compartecipazione', row.get('Compartecipazione_Perc', 0))
-                if pd.notna(compartec):
-                    compartec = float(compartec) if compartec != 'nan' else 0
-                else:
-                    compartec = 0
-                
+                compartec = safe_float(row.get('Compartecipazione', row.get('Compartecipazione_Perc')))
                 rimborso = massimale * (1 - compartec/100) if massimale > 0 else 0
                 
                 c1.metric("Massimale", f"€{massimale:.0f}")
                 c2.metric("Compartecipazione", f"{compartec:.0f}%")
                 c3.metric("Rimborso teorico", f"€{rimborso:.0f}")
                 
-                # Coperta
                 if row.get('Coperta') == 'checked':
                     st.success("✅ Prestazione coperta")
                 
@@ -130,43 +104,28 @@ else:
                 # Frequenza
                 freq_max = row.get('Frequenza Max')
                 if pd.notna(freq_max):
-                    st.markdown("### 📜 Regole di Rimborso")
-                    freq_desc = row.get('Descrizione_Frequenza', f"Massimo {freq_max} volte per anno")
-                    st.info(freq_desc)
+                    st.markdown("### 📜 Regole")
+                    st.info(row.get('Descrizione_Frequenza', f"Massimo {freq_max} volte"))
                 
-                # Alert prescrizione
+                # Alert
                 c1, c2 = st.columns(2)
                 with c1:
                     if row.get('Pre_Autorizzazione') or row.get('Pre Autorizzazione'):
-                        st.warning("⚠️ Pre-autorizzazione necessaria")
-                    else:
-                        st.success("✓ Senza pre-autorizzazione")
-                
+                        st.warning("⚠️ Pre-autorizzazione")
                 with c2:
                     if row.get('Prescrizione_Obbligatoria') or row.get('Prescrizione Obbligatoria'):
                         st.warning("📋 Prescrizione obbligatoria")
-                    else:
-                        st.success("✓ Prescrizione non necessaria")
-                
-                st.divider()
                 
                 # Documenti
                 docs = row.get('Documenti_Dopo') or row.get('Documenti Dopo')
                 if pd.notna(docs):
-                    st.markdown("### 📄 Documenti per Rimborso")
-                    st.text_area("", docs, height=150, disabled=True, label_visibility="collapsed", key=f"doc_{idx}")
+                    st.markdown("### 📄 Documenti")
+                    st.text_area("", docs, height=150, disabled=True, label_visibility="collapsed", key=f"d_{idx}")
                 
                 # Alert
                 alert = row.get('Alert_Importanti') or row.get('Alert Importanti')
                 if pd.notna(alert):
                     st.markdown("### ⚠️ Attenzione")
                     st.warning(alert)
-                
-                # Note
-                note = row.get('Note_Speciali') or row.get('Note Speciali')
-                if pd.notna(note):
-                    st.markdown("### 📝 Note Speciali")
-                    st.info(note)
 
-st.divider()
-st.caption("🏥 Tool Assistenza Sanitaria · Dati aggiornati 2026")
+st.caption("🏥 Tool Assistenza Sanitaria")
