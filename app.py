@@ -76,31 +76,19 @@ try:
             st.write("Colonne disponibili:", coperture.columns.tolist())
             st.stop()
         
-        # Filtra per assicurazione
-        df = coperture[coperture[assic_col_coperture] == st.session_state.assicurazione].copy()
-        
-        if len(df) == 0:
-            st.warning(f"Nessuna copertura trovata per {st.session_state.assicurazione}")
-            st.stop()
-        
-        # Ricerca
-        search = st.text_input("🔍 Cerca", placeholder="es: pulizia denti, visita...")
-        
-        st.markdown(f"**{len(df)} prestazioni disponibili**")
-        
-        # Mostra prime 10 prestazioni
-        for idx, row in df.head(10).iterrows():
-            with st.expander(f"📋 Prestazione #{idx}"):
-                # Mostra tutte le colonne
-                for col in df.columns:
-                    st.write(f"**{col}:** {row[col]}")
+        # DEBUG: Mostra cosa c'è nel CSV
+st.write("### 🔍 DEBUG INFO")
+st.write(f"**Cerco assicurazione:** `{st.session_state.assicurazione}`")
+st.write(f"**Colonna usata:** `{assic_col_coperture}`")
+st.write(f"**Valori unici in colonna:**")
+st.write(coperture[assic_col_coperture].unique())
+st.divider()
 
-except Exception as e:
-    st.error("Errore nel caricamento dati")
-    st.write(f"Dettaglio errore: {str(e)}")
-    
-    st.divider()
-    st.write("### Debug Info")
-    st.write("**File nella directory:**")
-    import os
-    st.write(os.listdir('.'))
+# Filtra per assicurazione
+df = coperture[coperture[assic_col_coperture] == st.session_state.assicurazione].copy()
+
+if len(df) == 0:
+    st.warning(f"Nessuna copertura trovata per {st.session_state.assicurazione}")
+    st.write("**Tutte le coperture nel CSV:**")
+    st.dataframe(coperture[[assic_col_coperture]].head(20))
+    st.stop()
