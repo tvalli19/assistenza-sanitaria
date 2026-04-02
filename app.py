@@ -2,93 +2,103 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(
-    page_title="Assistenza Sanitaria",
-    page_icon="🏥",
+    page_title="Debug Assistenza Sanitaria",
+    page_icon="🔍",
     layout="wide"
 )
 
-@st.cache_data
-def load_data():
-    # Carica i CSV e rinomina le colonne per sicurezza
+st.title("🔍 Debug: Analisi CSV")
+
+# Carica i file
+try:
     assicurazioni = pd.read_csv('assicurazioni.csv')
     prestazioni = pd.read_csv('prestazioni.csv')
     coperture = pd.read_csv('coperture.csv')
     
-    # Debug: stampa nomi colonne nei logs
-    print("Colonne Assicurazioni:", assicurazioni.columns.tolist())
-    print("Colonne Prestazioni:", prestazioni.columns.tolist())
-    print("Colonne Coperture:", coperture.columns.tolist())
+    st.success("✅ Tutti i CSV caricati correttamente!")
     
-    return assicurazioni, prestazioni, coperture
-
-try:
-    assicurazioni, prestazioni, coperture = load_data()
+    # ANALISI ASSICURAZIONI
+    st.write("## 📋 Assicurazioni.csv")
+    st.write(f"**Numero righe:** {len(assicurazioni)}")
+    st.write(f"**Colonne:** {list(assicurazioni.columns)}")
+    st.dataframe(assicurazioni)
     
-    # Inizializza session state
-    if 'assicurazione' not in st.session_state:
-        st.session_state.assicurazione = None
+    st.divider()
     
-    # PAGINA 1: Selezione Assicurazione
-    if st.session_state.assicurazione is None:
-        st.title("🏥 Quale assicurazione sanitaria hai?")
-        st.markdown("Scopri cosa è coperto e come ottenere il rimborso")
-        st.divider()
+    # ANALISI PRESTAZIONI
+    st.write("## 🏥 Prestazioni.csv")
+    st.write(f"**Numero righe:** {len(prestazioni)}")
+    st.write(f"**Colonne:** {list(prestazioni.columns)}")
+    st.dataframe(prestazioni.head(10))
+    st.caption(f"Mostrando prime 10 di {len(prestazioni)} righe totali")
+    
+    st.divider()
+    
+    # ANALISI COPERTURE (IMPORTANTE!)
+    st.write("## 💰 Coperture.csv")
+    st.write(f"**Numero righe:** {len(coperture)}")
+    st.write(f"**Colonne:** {list(coperture.columns)}")
+    st.dataframe(coperture.head(20))
+    st.caption(f"Mostrando prime 20 di {len(coperture)} righe totali")
+    
+    st.divider()
+    
+    # ANALISI COLONNA ASSICURAZIONE IN COPERTURE
+    st.write("## 🎯 Analisi Colonna Assicurazione")
+    
+    # Trova colonne che contengono "assicuraz"
+    assic_cols = [col for col in coperture.columns if 'assicuraz' in col.lower()]
+    
+    if assic_cols:
+        st.write(f"**Colonne trovate con 'assicuraz':** {assic_cols}")
         
-        # Mostra assicurazioni (usando prima colonna come nome)
-        nome_col = assicurazioni.columns[0]  # Prende prima colonna qualunque sia il nome
-        
-        cols = st.columns(min(3, len(assicurazioni)))
-        for idx, row in assicurazioni.iterrows():
-            with cols[idx % 3]:
-                nome_assic = row[nome_col]
-                st.markdown(f"### {nome_assic}")
-                # Mostra descrizione se esiste seconda colonna
-                if len(assicurazioni.columns) > 1:
-                    desc_col = assicurazioni.columns[1]
-                    st.caption(str(row[desc_col])[:100] + "...")
-                
-                if st.button("Seleziona", key=f"btn_{idx}"):
-                    st.session_state.assicurazione = nome_assic
-                    st.rerun()
-    
-    # PAGINA 2: Ricerca Prestazione
+        for col in assic_cols:
+            st.write(f"### Valori nella colonna `{col}`:")
+            valori_unici = coperture[col].value_counts()
+            st.write(valori_unici)
+            
+            st.write("**Esempi di valori:**")
+            for val in coperture[col].head(5):
+                st.code(f"'{val}' (tipo: {type(val).__name__}, lunghezza: {len(str(val))})")
     else:
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.title("Di cosa hai bisogno?")
-            st.caption(f"Assicurazione: {st.session_state.assicurazione}")
-        with col2:
-            if st.button("← Cambia"):
-                st.session_state.assicurazione = None
-                st.rerun()
-        
-        st.divider()
-        
-        # Trova colonne dinamicamente
-        assic_col_coperture = None
+        st.warning("⚠️ Nessuna colonna trovata con 'assicuraz' nel nome!")
+        st.write("**Tutte le colonne disponibili:**")
         for col in coperture.columns:
-            if 'assicuraz' in col.lower():
-                assic_col_coperture = col
-                break
+            st.write(f"- `{col}`")
+    
+    st.divider()
+    
+    # TEST MATCHING
+    st.write("## 🧪 Test Matching QUAS")
+    
+    if assic_cols:
+        col_assic = assic_cols[0]
+        st.write(f"Usando colonna: `{col_assic}`")
         
-        if assic_col_coperture is None:
-            st.error("Colonna Assicurazione non trovata in Coperture.csv")
-            st.write("Colonne disponibili:", coperture.columns.tolist())
-            st.stop()
+        # Prova a filtrare per QUAS
+        test_quas = coperture[coperture[col_assic] == 'QUAS']
+        st.write(f"**Righe con valore esatto 'QUAS':** {len(test_quas)}")
         
-        # DEBUG: Mostra cosa c'è nel CSV
-st.write("### 🔍 DEBUG INFO")
-st.write(f"**Cerco assicurazione:** `{st.session_state.assicurazione}`")
-st.write(f"**Colonna usata:** `{assic_col_coperture}`")
-st.write(f"**Valori unici in colonna:**")
-st.write(coperture[assic_col_coperture].unique())
-st.divider()
+        # Prova varianti
+        test_quas_strip = coperture[coperture[col_assic].astype(str).str.strip() == 'QUAS']
+        st.write(f"**Righe con 'QUAS' (dopo strip):** {len(test_quas_strip)}")
+        
+        # Prova contains
+        test_quas_contains = coperture[coperture[col_assic].astype(str).str.contains('QUAS', na=False)]
+        st.write(f"**Righe che contengono 'QUAS':** {len(test_quas_contains)}")
+        
+        if len(test_quas_contains) > 0:
+            st.success("✅ Trovate coperture QUAS!")
+            st.dataframe(test_quas_contains.head(5))
 
-# Filtra per assicurazione
-df = coperture[coperture[assic_col_coperture] == st.session_state.assicurazione].copy()
-
-if len(df) == 0:
-    st.warning(f"Nessuna copertura trovata per {st.session_state.assicurazione}")
-    st.write("**Tutte le coperture nel CSV:**")
-    st.dataframe(coperture[[assic_col_coperture]].head(20))
-    st.stop()
+except FileNotFoundError as e:
+    st.error(f"❌ File non trovato: {e}")
+    st.write("**File nella directory:**")
+    import os
+    st.write(os.listdir('.'))
+    
+except Exception as e:
+    st.error(f"❌ Errore generico: {e}")
+    st.write("**Dettagli:**")
+    import traceback
+    st.code(traceback.format_exc())
